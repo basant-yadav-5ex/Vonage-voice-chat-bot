@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice ↔ Chat Bridge</title>
+  <script src="/socket.io/socket.io.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      background: linear-gradient(135deg, #494a4c, #494a4c);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+      color: #e5e7eb;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 1200px;
+      height: 85vh;
+      min-height: 500px;
+      background: #020617;
+      border-radius: 20px;
+      display: flex;
+      flex-direction: row;
+      overflow: hidden;
+      box-shadow: 0 0 40px rgba(0, 0, 0, .8);
+    }
+
+    .left-panel {
+      width: 280px;
+      min-width: 250px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1e293b;
+      background: #0f172a;
+    }
+
+    header {
+      padding: 20px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: .3px;
+      color: #38bdf8;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .controls {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .controls button {
+      width: 100%;
+      padding: 16px;
+      border-radius: 12px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 15px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .start {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: white;
+    }
+
+    .end {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+    }
+
+    .controls button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .chat {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+      background: #020617;
+    }
+
+    .message {
+      max-width: 70%;
+      display: flex;
+      flex-direction: column;
+      animation: fade 0.3s ease;
+    }
+
+    .message.bot {
+      align-self: flex-start;
+    }
+
+    .message.me {
+      align-self: flex-end;
+    }
+
+    .message-bubble {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      padding: 10px;
+      border-radius: 20px;
+      border-bottom-left-radius: 2px;
+      border-left: 3px solid #38bdf8;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      position: relative;
+    }
+
+    .message.me .message-bubble {
+      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+      border-left: 3px solid #0284c7;
+      border-bottom-left-radius: 20px;
+      border-bottom-right-radius: 2px;
+    }
+
+    .message-text {
+      flex: 1;
+      font-size: 15px;
+      line-height: 1.5;
+      word-wrap: break-word;
+      color: #e5e7eb;
+    }
+
+    .message.me .message-text {
+      color: white;
+    }
+
+    .voice-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      color: #e5e7eb;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px;
+      border-radius: 999px;
+      transition: all 0.15s ease;
+      font-size: 12px;
+      min-width: 25px;
+      min-height: 25px;
+    }
+
+    .voice-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.05);
+    }
+
+    .voice-btn.playing {
+      background: #38bdf8;
+      animation: pulse 1s infinite;
+    }
+
+    /* Message status indicators */
+    .message-status {
+      display: inline-flex;
+      align-items: end;
+      margin-left: 4px;
+      font-size: 10px;
+      margin-top: 9px;
+      font-weight: 600;
+    }
+
+    .status-sent {
+      color: blue;
+    }
+
+    .status-failed {
+      color: #ef4444;
+    }
+
+    .status-sending {
+      color: #94a3b8;
+    }
+
+    /* Error message styling */
+    .message.error .message-bubble {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border-left: 3px solid #ef4444;
+    }
+
+    .message.error .message-text {
+      color: #fecaca;
+    }
+
+    /* Retry button */
+    .retry-btn {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid #ef4444;
+      color: #fecaca;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+      margin-left: 4px;
+      cursor: pointer;
+      margin-top: 9px;
+      transition: all 0.15s ease;
+    }
+
+    .retry-btn:hover {
+      background: rgba(239, 68, 68, 0.4);
+    }
+
+    .timestamp {
+      font-size: 10px;
+      color: #94a3b8;
+      margin-left: 4px;
+      align-self: flex-end;
+      margin-top: 9px;
+    }
+
+    .message.me .timestamp {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 0.8;
+      }
+
+      50% {
+        opacity: 1;
+      }
+    }
+
+    @keyframes fade {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .typing-dots {
+      align-self: flex-start;
+      padding: 14px 22px;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border-radius: 20px;
+      border-bottom-left-radius: 8px;
+      border-left: 3px solid #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .typing-dots span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #38bdf8;
+      animation: dotBounce 1.4s infinite ease-in-out both;
+    }
+
+    .typing-dots span:nth-child(2) {
+      animation-delay: 0.16s;
+    }
+
+    .typing-dots span:nth-child(3) {
+      animation-delay: 0.32s;
+    }
+
+    @keyframes dotBounce {
+
+      0%,
+      80%,
+      100% {
+        transform: scale(0.4);
+        opacity: 0.4;
+      }
+
+      40% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    .input-area {
+      display: flex;
+      gap: 12px;
+      padding: 20px;
+      border-top: 1px solid #1e293b;
+      background: #020617;
+    }
+
+    input {
+      flex: 1;
+      padding: 16px 20px;
+      border-radius: 16px;
+      background: #0f172a;
+      border: 2px solid #1e293b;
+      outline: none;
+      color: #e5e7eb;
+      font-size: 15px;
+      transition: border-color 0.2s ease;
+    }
+
+    input:focus {
+      border-color: #38bdf8;
+    }
+
+    .input-area button {
+      padding: 16px 24px;
+      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+      border-radius: 16px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 15px;
+      color: white;
+      transition: all 0.2s ease;
+      min-width: 100px;
+    }
+
+    .input-area button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+    }
+
+    .input-area button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .voice-btn.playing {
+      background: #38bdf8;
+      animation: pulse 1s infinite;
+    }
+
+    .voice-btn.playing:hover {
+      background: #38bdf8;
+      animation: none;
+    }
+
+    @media (max-width: 768px) {
+      .app {
+        flex-direction: column;
+        height: 100vh;
+        border-radius: 0;
+      }
+
+      .left-panel {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid #1e293b;
+      }
+
+      .controls {
+        flex-direction: row;
+      }
+
+      .message {
+        max-width: 85%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="left-panel">
+      <header>Voice Chat Bridge</header>
+      <div class="controls">
+        <button class="start" onclick="startCall()">📞 Start Call</button>
+        <button class="end" onclick="endCall()" disabled>📴 End Call</button>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <div class="chat" id="chat"></div>
+      <div class="input-area">
+        <input id="input" placeholder="Start a call first..." onkeypress="handleKeyPress(event)" autocomplete="off"
+          disabled />
+        <button onclick="send()" id="sendBtn" disabled>Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    const chat = document.getElementById("chat");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("sendBtn");
+
+    let isCallActive = false;
+    let typingEl = null;
+    let currentlyPlaying = null;
+    const messageIds = new Set(); // Track message IDs to prevent duplicates
+
+    function getTimestamp() {
+      const now = new Date();
+      return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
+    }
+
+    // Clean text function
+    function cleanText(text) {
+      if (!text) return '';
+      return text
+        .replace(/Ava from/gi, 'AIVA')
+        .replace(/able from/gi, 'AIVA')
+        .replace(/AIVA from/gi, 'AIVA')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    // Add this to your index.js file - now you can type checkHealth() in browser console
+    window.checkHealth = async function () {
+      try {
+        const response = await fetch('/api/health');
+        const data = await response.json();
+        console.log('🔍 VONAGE HEALTH CHECK 🔍');
+        console.log('=========================');
+        console.log('📞 Call Active:', data.isCallActive ? '✅ YES' : '❌ NO');
+        console.log('🎤 Bot Speaking:', data.isSpeaking ? '🔊 YES' : '🤐 NO');
+        console.log('🆔 Call UUID:', data.activeCallUuid || 'None');
+        console.log('⏱️  Server Uptime:', Math.floor(data.uptime / 60) + 'm ' + Math.floor(data.uptime % 60) + 's');
+        console.log('📊 Queue Status:');
+        console.log('   - Pending Audio:', data.hasPendingAudio ? '✅' : '❌');
+        console.log('   - Pending Text:', data.hasPendingText ? '✅' : '❌');
+        if (data.pendingTextContent) {
+          console.log('   - Pending Text Content: "' + data.pendingTextContent + '"');
+        }
+        console.log('   - Audio Complete:', data.pendingAudioComplete ? '✅' : '❌');
+        console.log('   - Text Complete:', data.pendingTextComplete ? '✅' : '❌');
+        console.log('=========================');
+        return data;
+      } catch (err) {
+        console.error('❌ Health check failed:', err);
+      }
+    };
+
+    // Add a combined voice message with text AND audio together
+    function addVoiceMessage(text, audioBase64, messageId, isFromBot = true, status = 'sent', isSystem = false) {
+      // Prevent duplicate messages
+      if (messageId && messageIds.has(messageId)) {
+        console.log('Duplicate message prevented:', messageId);
+        return null;
+      }
+
+      if (messageId) {
+        messageIds.add(messageId);
+      }
+
+      const messageDiv = document.createElement("div");
+
+      // System messages appear on the right but without status indicators
+      if (isSystem) {
+        messageDiv.className = `message me`;
+      } else {
+        messageDiv.className = `message ${isFromBot ? 'bot' : 'me'}`;
+      }
+
+      if (!isFromBot && !isSystem && status === 'failed') {
+        messageDiv.classList.add('error');
+      }
+      // messageDiv.dataset.messageId = messageId || Date.now();
+      messageDiv.dataset.messageId = messageId || `msg-${Date.now()}`;
+
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+
+      // Voice button - show if we have audio
+      if (audioBase64) {
+        const voiceBtn = document.createElement("button");
+        voiceBtn.className = "voice-btn";
+        voiceBtn.innerHTML = "🔊"; // Start with play icon
+        voiceBtn.title = "Play voice recording";
+
+        const audioSrc = `data:audio/wav;base64,${audioBase64}`;
+        let audio = null; // Will be created on first play
+
+        voiceBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+
+          // If this button is already playing, stop it
+          if (this.classList.contains("playing")) {
+            if (audio) {
+              audio.pause();
+              audio.currentTime = 0;
+              audio = null;
+            }
+            this.classList.remove("playing");
+            this.innerHTML = "🔊"; // Back to play icon
+            this.title = "Play voice recording";
+
+            // Clear currentlyPlaying if it's this audio
+            if (currentlyPlaying === audio) {
+              currentlyPlaying = null;
+            }
+            return;
+          }
+
+          // Stop any other currently playing audio
+          if (currentlyPlaying) {
+            // Find and reset the playing button
+            const prevBtn = document.querySelector(".voice-btn.playing");
+            if (prevBtn) {
+              prevBtn.classList.remove("playing");
+              prevBtn.innerHTML = "🔊";
+              prevBtn.title = "Play voice recording";
+            }
+            currentlyPlaying.pause();
+            currentlyPlaying.currentTime = 0;
+            currentlyPlaying = null;
+          }
+
+          // Create new audio if needed
+          if (!audio) {
+            audio = new Audio(audioSrc);
+
+            audio.onended = () => {
+              this.classList.remove("playing");
+              this.innerHTML = "🔊";
+              this.title = "Play voice recording";
+              currentlyPlaying = null;
+              audio = null; // Allow recreation if played again
+            };
+
+            audio.onerror = (err) => {
+              console.error("Audio playback error:", err);
+              this.classList.remove("playing");
+              this.innerHTML = "🔊";
+              this.title = "Play voice recording";
+              currentlyPlaying = null;
+              audio = null;
+            };
+          }
+
+          // Play the audio
+          currentlyPlaying = audio;
+          this.classList.add("playing");
+          this.innerHTML = "⏸️"; // Change to pause icon
+          this.title = "Stop voice recording";
+
+          audio.play().catch(err => {
+            console.error("Playback failed:", err);
+            this.classList.remove("playing");
+            this.innerHTML = "🔊";
+            this.title = "Play voice recording";
+            currentlyPlaying = null;
+            audio = null;
+          });
+        });
+
+        bubble.appendChild(voiceBtn);
+      }
+
+      // Message text
+      const textSpan = document.createElement("span");
+      textSpan.className = "message-text";
+      // textSpan.textContent = cleanText(text) || (isFromBot ? 'Voice message' : '');
+
+      textSpan.textContent = cleanText(text || '');
+
+      bubble.appendChild(textSpan);
+
+      // Add status indicator ONLY for user messages that are NOT system messages
+      if (!isFromBot && !isSystem) {
+        const statusSpan = document.createElement("span");
+        statusSpan.className = "message-status";
+
+        if (status === 'sent') {
+          statusSpan.innerHTML = '✓✓';
+          statusSpan.classList.add('status-sent');
+          statusSpan.title = 'Sent';
+        } else if (status === 'failed') {
+          statusSpan.innerHTML = '⚠️';
+          statusSpan.classList.add('status-failed');
+          statusSpan.title = 'Failed to send';
+
+          // Add retry button for failed messages
+          const retryBtn = document.createElement("button");
+          retryBtn.className = "retry-btn";
+          retryBtn.innerHTML = "Retry";
+          retryBtn.onclick = (e) => {
+            e.stopPropagation();
+            // Remove the failed message
+            messageDiv.remove();
+            // Retry sending the message
+            input.value = text;
+            send();
+          };
+          bubble.appendChild(retryBtn);
+        }
+
+        bubble.appendChild(statusSpan);
+      }
+
+      // Timestamp
+      const timestamp = document.createElement("span");
+      timestamp.className = "timestamp";
+      timestamp.textContent = getTimestamp();
+      bubble.appendChild(timestamp);
+
+      messageDiv.appendChild(bubble);
+      chat.appendChild(messageDiv);
+      chat.scrollTop = chat.scrollHeight;
+
+      return messageDiv;
+    }
+    // Add a combined voice message with text AND audio together
+
+    function showTypingDots() {
+      hideTypingDots();
+      typingEl = document.createElement("div");
+      typingEl.className = "typing-dots";
+      typingEl.innerHTML = "<span></span><span></span><span></span>";
+      chat.appendChild(typingEl);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function hideTypingDots() {
+      if (typingEl) {
+        typingEl.remove();
+        typingEl = null;
+      }
+    }
+
+    // Listen for combined voice messages (text + audio together)
+    // socket.on("voice-message", (data) => {
+    //   hideTypingDots();
+    //   console.log("Received voice message:", data);
+
+    //   // Add a single message with both text and audio using the message ID
+    //   addVoiceMessage(data.text, data.audio, data.id, true);
+
+    //   // Only show typing dots if it's not a sorry message
+    //   if (data.text && !data.text.toLowerCase().includes("sorry") &&
+    //     !data.text.toLowerCase().includes("didn't catch") &&
+    //     !data.text.toLowerCase().includes("repeat")) {
+    //     showTypingDots();
+    //   }
+    // });
+
+    // Listen for combined voice messages (text + audio together)
+    socket.on("voice-message", (data) => {
+      hideTypingDots();
+      console.log("Received voice message:", data);
+
+      // ONLY show message if BOTH text and audio are present
+      if (data.text && data.audio) {
+        // Add a single message with both text and audio using the message ID
+        addVoiceMessage(data.text, data.audio, data.id, true);
+
+        // Only show typing dots if it's not a sorry message
+        if (data.text && !data.text.toLowerCase().includes("sorry") &&
+          !data.text.toLowerCase().includes("didn't catch") &&
+          !data.text.toLowerCase().includes("repeat")) {
+          showTypingDots();
+        }
+      } else {
+        console.log("Skipping message - missing text or audio:", {
+          hasText: !!data.text,
+          hasAudio: !!data.audio
+        });
+      }
+    });
+
+    // 🔥 Also listen for plain transcript messages (fallback)
+    // socket.on("transcript", (data) => {
+    //   hideTypingDots();
+    //   console.log("Received transcript:", data);
+
+    //   if (!data?.text) return;
+
+    //   addVoiceMessage(
+    //     data.text,
+    //     null, // no audio
+    //     `transcript-${Date.now()}`,
+    //     true
+    //   );
+
+    //   // Show typing dots unless it's a sorry message
+    //   if (
+    //     !data.text.toLowerCase().includes("sorry") &&
+    //     !data.text.toLowerCase().includes("didn't catch") &&
+    //     !data.text.toLowerCase().includes("repeat")
+    //   ) {
+    //     showTypingDots();
+    //   }
+    // });
+
+    // 🔥 Also listen for plain transcript messages (fallback)
+    socket.on("transcript", (data) => {
+      hideTypingDots();
+      console.log("Received transcript:", data);
+
+      if (!data?.text) return;
+
+      // For transcript messages (no audio), you might want to show them differently
+      // or skip them based on your requirements
+      addVoiceMessage(
+        data.text,
+        null, // no audio
+        `transcript-${Date.now()}`,
+        true
+      );
+
+      // Show typing dots unless it's a sorry message
+      if (
+        !data.text.toLowerCase().includes("sorry") &&
+        !data.text.toLowerCase().includes("didn't catch") &&
+        !data.text.toLowerCase().includes("repeat")
+      ) {
+        showTypingDots();
+      }
+    });
+
+    // Keep status messages separate
+    socket.on("status", (msg) => {
+      if (msg.includes("Call connected")) {
+        isCallActive = true;
+        updateCallButtons();
+        addVoiceMessage(msg, null, `status-${Date.now()}`, true);
+        showTypingDots();
+      } else if (msg.includes("Call ended")) {
+        isCallActive = false;
+        updateCallButtons();
+        addVoiceMessage(msg, null, `status-${Date.now()}`, true);
+        hideTypingDots();
+        // Clear message ID cache
+        messageIds.clear();
+      } else if (msg === "typing") {
+        // Handle typing indicator from server
+        showTypingDots();
+      } else {
+        addVoiceMessage(msg, null, `status-${Date.now()}`, true);
+      }
+    });
+
+    async function startCall() {
+      addVoiceMessage("📞 Calling +17813044745...", null, `outbound-${Date.now()}`, false, 'sent', true);
+      // Added isSystem = true as the 6th parameter ↑
+
+      try {
+        const response = await fetch("/api/call/start", { method: "POST" });
+        if (!response.ok) {
+          addVoiceMessage("❌ Failed to start call", null, `error-${Date.now()}`, true);
+          isCallActive = false;
+          updateCallButtons();
+        }
+      } catch (err) {
+        console.error("Call start error:", err);
+        addVoiceMessage("❌ Failed to start call", null, `error-${Date.now()}`, true);
+        isCallActive = false;
+        updateCallButtons();
+      }
+    }
+
+    async function endCall() {
+      try {
+        await fetch("/api/call/end", { method: "POST" });
+      } catch (err) {
+        console.error("Call end error:", err);
+      }
+    }
+
+    async function send() {
+      const text = input.value.trim();
+      if (!text) return;
+      if (!isCallActive) {
+        addVoiceMessage("❌ No active call — start a call first", null, `error-${Date.now()}`, true);
+        return;
+      }
+
+      // Add message with sending status
+      const messageId = `user-${Date.now()}`;
+      const messageDiv = addVoiceMessage(text, null, messageId, false, 'sending');
+      input.value = "";
+
+      try {
+        const response = await fetch("/api/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+
+        if (!response.ok) {
+          // Update the existing message to failed status instead of removing and re-adding
+          if (messageDiv) {
+            // Clear the message bubble and rebuild with failed status
+            const bubble = messageDiv.querySelector('.message-bubble');
+            bubble.innerHTML = '';
+
+            // Rebuild the bubble content
+            const textSpan = document.createElement("span");
+            textSpan.className = "message-text";
+            textSpan.textContent = cleanText(text);
+            bubble.appendChild(textSpan);
+
+            // Add failed status
+            const statusSpan = document.createElement("span");
+            statusSpan.className = "message-status status-failed";
+            statusSpan.innerHTML = '⚠️';
+            statusSpan.title = 'Failed to send';
+            bubble.appendChild(statusSpan);
+
+            // Add retry button
+            const retryBtn = document.createElement("button");
+            retryBtn.className = "retry-btn";
+            retryBtn.innerHTML = "Retry";
+            retryBtn.onclick = (e) => {
+              e.stopPropagation();
+              messageDiv.remove();
+              input.value = text;
+              send();
+            };
+            bubble.appendChild(retryBtn);
+
+            // Update timestamp
+            const timestamp = bubble.querySelector('.timestamp');
+            if (timestamp) {
+              timestamp.textContent = getTimestamp();
+            }
+
+            messageDiv.classList.add('error');
+          }
+          console.error("Failed to send message");
+        } else {
+          // Update the existing message to sent status
+          if (messageDiv) {
+            const bubble = messageDiv.querySelector('.message-bubble');
+
+            // Remove any existing status span
+            const oldStatus = bubble.querySelector('.message-status');
+            if (oldStatus) oldStatus.remove();
+
+            // Remove any existing retry button
+            const oldRetry = bubble.querySelector('.retry-btn');
+            if (oldRetry) oldRetry.remove();
+
+            // Add sent status
+            const statusSpan = document.createElement("span");
+            statusSpan.className = "message-status status-sent";
+            statusSpan.innerHTML = '✓✓';
+            statusSpan.title = 'Sent';
+            bubble.appendChild(statusSpan);
+
+            messageDiv.classList.remove('error');
+          }
+          // Show typing dots only after message is sent successfully
+          showTypingDots();
+        }
+      } catch (err) {
+        console.error("Network Error:", err);
+        // Update the existing message to failed status
+        if (messageDiv) {
+          const bubble = messageDiv.querySelector('.message-bubble');
+          bubble.innerHTML = '';
+
+          const textSpan = document.createElement("span");
+          textSpan.className = "message-text";
+          textSpan.textContent = cleanText(text);
+          bubble.appendChild(textSpan);
+
+          const statusSpan = document.createElement("span");
+          statusSpan.className = "message-status status-failed";
+          statusSpan.innerHTML = '⚠️';
+          statusSpan.title = 'Failed to send';
+          bubble.appendChild(statusSpan);
+
+          const retryBtn = document.createElement("button");
+          retryBtn.className = "retry-btn";
+          retryBtn.innerHTML = "Retry";
+          retryBtn.onclick = (e) => {
+            e.stopPropagation();
+            messageDiv.remove();
+            input.value = text;
+            send();
+          };
+          bubble.appendChild(retryBtn);
+
+          const timestamp = bubble.querySelector('.timestamp');
+          if (timestamp) {
+            timestamp.textContent = getTimestamp();
+          }
+
+          messageDiv.classList.add('error');
+        }
+        hideTypingDots();
+      }
+    }
+
+    function handleKeyPress(event) {
+      if (event.key === "Enter") {
+        send();
+      }
+    }
+
+    function updateCallButtons() {
+      const startBtn = document.querySelector(".start");
+      const endBtn = document.querySelector(".end");
+
+      startBtn.disabled = isCallActive;
+      endBtn.disabled = !isCallActive;
+      sendBtn.disabled = !isCallActive;
+      input.disabled = !isCallActive;
+
+      input.placeholder = isCallActive ? "Type your reply..." : "Start a call first...";
+    }
+
+    // Initialize
+    window.addEventListener("load", () => {
+      updateCallButtons();
+    });
+
+    // Clean up
+    window.addEventListener("beforeunload", () => {
+      if (isCallActive) {
+        endCall();
+      }
+    });
+  </script>
+</body>
+
+</html>
