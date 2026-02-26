@@ -8,7 +8,8 @@ export const callState = {
   pendingAudio: null,
   pendingText: null,
   messageCounter: 0,
-  asrTimeoutId: null // Track ASR waiting timeout
+  asrTimeoutId: null, // Track ASR waiting timeout
+  retryNumber: 3
 };
 
 export function shouldConsiderCallActive() {

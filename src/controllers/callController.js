@@ -2,9 +2,9 @@ import { vonage } from "../config/vonage.js";
 import { callState, resetInactivityTimer } from "../state/callState.js";
 
 export async function startCall(req, res, io) {
-    console.log('Start call ::::::::::::::::::>>>>>>>>>')
+  console.log('Started call ::::::::::::::::::>>>>>>>>>::::::::::::::::::')
   try {
-    const call = await makeCallWithRetry(3);
+    const call = await makeCallWithRetry(callState.retryNumber);
 
     callState.activeCallUuid = call.uuid;
     callState.isCallActive = true;
@@ -27,7 +27,7 @@ export async function endCall(req, res, io) {
       return res.json({ success: false, message: "No active call" });
     }
 
-    await hangupWithRetry(callState.activeCallUuid, 3);
+    await hangupWithRetry(callState.activeCallUuid, callState.retryNumber);
 
     // Force cleanup
     callState.activeCallUuid = null;
@@ -44,7 +44,7 @@ export async function endCall(req, res, io) {
     }
 
     io.emit("status", "📴 Call ended");
-
+    console.log('Ended call ::::::::::::::::::>>>>>>>>>::::::::::::::::::')
     res.json({ success: true });
   } catch (err) {
     console.error("Call end error:", err.message);
@@ -59,7 +59,7 @@ export async function endCall(req, res, io) {
   }
 }
 
-async function makeCallWithRetry(retries = 3) {
+async function makeCallWithRetry(retries = callState.retryNumber) {
   for (let i = 0; i < retries; i++) {
     try {
       const call = await vonage.voice.createOutboundCall({
@@ -80,7 +80,7 @@ async function makeCallWithRetry(retries = 3) {
   }
 }
 
-async function hangupWithRetry(uuid, retries = 3) {
+async function hangupWithRetry(uuid, retries = callState.retryNumber) {
   for (let i = 0; i < retries; i++) {
     try {
       await vonage.voice.hangupCall(uuid);

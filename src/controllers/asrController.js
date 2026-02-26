@@ -34,8 +34,6 @@ export function handleAsr(req, res, io) {
 
     let cleanMessage = rawText
         .replace(/Ava from/gi, "AIVA")
-        .replace(/able from/gi, "AIVA")
-        .replace(/\b1\b/g, "one")
         .replace(/\s+/g, " ")
         .trim();
 

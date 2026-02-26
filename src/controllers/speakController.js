@@ -58,7 +58,7 @@ export async function speak(req, res, io) {
           level: 0.4
         })
       },
-      3
+      callState.retryNumber
     );
 
     const talkBody = await talkResp.text();
@@ -92,7 +92,7 @@ export async function speak(req, res, io) {
           destination: { type: "ncco", ncco }
         })
       },
-      3
+      callState.retryNumber    // try 3 times
     );
 
     if (!transferResp.ok) {
