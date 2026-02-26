@@ -290,11 +290,15 @@
         addVoiceMessage(msg, null, `status-${Date.now()}`, true);
         showTypingDots();
       }
-       else if (msg.includes("Call ended")) {
+      else if (msg.includes("Call ended")) {
         isCallActive = false;
         updateCallButtons();
         addVoiceMessage(msg, null, `status-${Date.now()}`, true);
         hideTypingDots();
+
+        // Clear full chat
+        chat.innerHTML = "";
+
         // Clear message ID cache
         messageIds.clear();
       } else if (msg === "typing") {
