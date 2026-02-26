@@ -85,19 +85,30 @@ export default function setupVonageWs(server, io) {
                   isComplete: true
                 };
 
+                console.log(`>> Audio stored in pendingAudio, checking for pendingText...`);
+
                 if (callState.pendingText && callState.pendingText.isComplete) {
-                  console.log(`>> Matching audio ${currentUtteranceId} with pending text: "${callState.pendingText.text}"`);
+                  console.log(`>> ✅ Audio arrived! Matching with pending text: "${callState.pendingText.text}"`);
                   io.emit("voice-message", {
                     id: currentUtteranceId,
                     text: callState.pendingText.text,
                     audio: audioBase64,
+                    recordingUrl: callState.pendingText.recordingUrl,
                     timestamp: Date.now(),
-                    isComplete: true
+                    isComplete: true,
+                    source: "websocket"
                   });
+
+                  // Clear timeout if waiting
+                  if (callState.asrTimeoutId) {
+                    clearTimeout(callState.asrTimeoutId);
+                    callState.asrTimeoutId = null;
+                  }
+
                   callState.pendingText = null;
                   callState.pendingAudio = null;
-                } else if (callState.pendingText && !callState.pendingText.isComplete) {
-                  console.log(`>> Waiting for complete text for ${currentUtteranceId}`);
+                } else {
+                  console.log(`>> Audio ready but no text yet. Waiting for ASR webhook response...`);
                 }
               }
             }

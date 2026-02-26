@@ -1,5 +1,7 @@
 export function initialNCCO(baseUrl) {
-  const wsUrl = baseUrl.replace("https://", "wss://").replace("http://", "ws://");
+  const wsUrl = baseUrl
+    .replace("https://", "wss://")
+    .replace("http://", "ws://");
 
   return [
     {
@@ -22,7 +24,7 @@ export function initialNCCO(baseUrl) {
         maxDuration: 60,
         startTimeout: 15,
         sensitivity: 75,
-        saveAudio: false
+        saveAudio: true
       },
       eventUrl: [`${baseUrl}/webhooks/asr`],
       eventMethod: "POST"
@@ -41,7 +43,7 @@ export function continueListeningNCCO(baseUrl) {
         maxDuration: 60,
         startTimeout: 15,
         sensitivity: 75,
-        saveAudio: false
+        saveAudio: true
       },
       eventUrl: [`${baseUrl}/webhooks/asr`],
       eventMethod: "POST"

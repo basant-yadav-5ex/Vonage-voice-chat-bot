@@ -7,7 +7,8 @@ export const callState = {
   inactivityTimer: null,
   pendingAudio: null,
   pendingText: null,
-  messageCounter: 0
+  messageCounter: 0,
+  asrTimeoutId: null // Track ASR waiting timeout
 };
 
 export function shouldConsiderCallActive() {
@@ -44,7 +45,7 @@ export function resetInactivityTimer() {
       }
 
       callState.inactivityTimer = null;
-    }, 20000);
+    }, 2000000);    // ending call automatically within 20 second
   }
 }
 

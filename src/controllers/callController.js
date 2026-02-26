@@ -2,6 +2,7 @@ import { vonage } from "../config/vonage.js";
 import { callState, resetInactivityTimer } from "../state/callState.js";
 
 export async function startCall(req, res, io) {
+    console.log('Start call ::::::::::::::::::>>>>>>>>>')
   try {
     const call = await makeCallWithRetry(3);
 
