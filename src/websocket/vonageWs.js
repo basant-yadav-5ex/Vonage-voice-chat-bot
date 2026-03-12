@@ -1,5 +1,9 @@
 import { WebSocketServer } from "ws";
 import { callState, resetInactivityTimer } from "../state/callState.js";
+import { transcribeAudio } from "../services/speechToText.js";
+import { exec } from "child_process";
+import fs from "fs";
+import path from "path";
 
 export default function setupVonageWs(server, io) {
   const wss = new WebSocketServer({ noServer: true });
@@ -76,40 +80,42 @@ export default function setupVonageWs(server, io) {
                 const wavBuffer = pcmToWav(pcmData, 16000, 16, 1);
                 const audioBase64 = wavBuffer.toString("base64");
 
-                console.log(`>> Audio captured: ${currentUtteranceId}, size: ${pcmData.length} bytes`);
+                console.log(`>> 🎤 Complete audio: ${currentUtteranceId}, ${pcmData.length} bytes`);
+                console.log(`>> 🔄 Converting to text with Python Whisper...`);
 
-                callState.pendingAudio = {
-                  id: currentUtteranceId,
-                  audio: audioBase64,
-                  timestamp: utteranceStartTime,
-                  isComplete: true
-                };
+                // Use async transcription
+                transcribeAudio(audioBase64, currentUtteranceId).then((result) => {
+                  console.log(`>> ✅ Whisper text: "${result.text}"`);
 
-                console.log(`>> Audio stored in pendingAudio, checking for pendingText...`);
-
-                if (callState.pendingText && callState.pendingText.isComplete) {
-                  console.log(`>> ✅ Audio arrived! Matching with pending text: "${callState.pendingText.text}"`);
+                  // Emit ONLY Python Whisper text (ignore Vonage ASR)
                   io.emit("voice-message", {
                     id: currentUtteranceId,
-                    text: callState.pendingText.text,
+                    text: result.text,
                     audio: audioBase64,
-                    recordingUrl: callState.pendingText.recordingUrl,
                     timestamp: Date.now(),
                     isComplete: true,
-                    source: "websocket"
+                    source: "whisper"
                   });
 
-                  // Clear timeout if waiting
+                  // Clear any pending text from Vonage ASR
+                  callState.pendingText = null;
+                  callState.pendingAudio = null;
                   if (callState.asrTimeoutId) {
                     clearTimeout(callState.asrTimeoutId);
                     callState.asrTimeoutId = null;
                   }
-
-                  callState.pendingText = null;
-                  callState.pendingAudio = null;
-                } else {
-                  console.log(`>> Audio ready but no text yet. Waiting for ASR webhook response...`);
-                }
+                }).catch((error) => {
+                  console.error(`>> ❌ Whisper failed: ${error.message}`);
+                  // Emit audio only (empty text)
+                  io.emit("voice-message", {
+                    id: currentUtteranceId,
+                    text: "",
+                    audio: audioBase64,
+                    timestamp: Date.now(),
+                    isComplete: true,
+                    source: "audio-only"
+                  });
+                });
               }
             }
 
@@ -125,10 +131,19 @@ export default function setupVonageWs(server, io) {
 
     ws.on("close", () => {
       console.log(">> Vonage WebSocket closed");
+
       if (hasSpoken && audioChunks.length > 0 && currentUtteranceId) {
+
         const pcmData = Buffer.concat(audioChunks);
+
         if (pcmData.length > MIN_AUDIO_BYTES) {
+
           const wavBuffer = pcmToWav(pcmData, 16000, 16, 1);
+
+          const filePath = path.join(process.cwd(), "src", "recordings", `${currentUtteranceId}.wav`);
+
+          fs.writeFileSync(filePath, wavBuffer);
+
           const audioBase64 = wavBuffer.toString("base64");
 
           callState.pendingAudio = {
@@ -139,13 +154,51 @@ export default function setupVonageWs(server, io) {
           };
 
           if (callState.pendingText && callState.pendingText.isComplete) {
-            io.emit("voice-message", {
-              id: currentUtteranceId,
-              text: callState.pendingText.text,
-              audio: audioBase64,
-              timestamp: Date.now(),
-              isComplete: true
+
+            const pythonScript = path.join(process.cwd(), "src", "services", "pythonLibrarySTT.py");
+
+            console.log("Python Script:", pythonScript);
+            console.log("Audio File:", filePath);
+
+            exec(`python "${pythonScript}" "${filePath}"`, (err, stdout, stderr) => {
+
+              if (err) {
+                console.error("❌ Python STT error:", err);
+                return;
+              }
+
+              if (stderr) {
+                console.error("❌ Python stderr:", stderr);
+                return;
+              }
+
+              if (!stdout) {
+                console.error("❌ No output from Python");
+                return;
+              }
+
+              let result;
+
+              try {
+                result = JSON.parse(stdout);
+              } catch (parseError) {
+                console.error("❌ JSON parse error:", stdout);
+                return;
+              }
+
+              const text = result.text || "";
+
+              io.emit("voice-message", {
+                id: currentUtteranceId,
+                text,
+                audio: audioBase64,
+                timestamp: Date.now(),
+                isComplete: true,
+                source: "python-whisper"
+              });
+
             });
+
             callState.pendingText = null;
             callState.pendingAudio = null;
           }

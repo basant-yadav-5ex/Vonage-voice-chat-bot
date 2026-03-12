@@ -14,39 +14,10 @@ export function initialNCCO(baseUrl) {
           headers: {}
         }
       ]
-    },
-    {
-      action: "input",
-      type: ["speech"],
-      speech: {
-        language: "en-US",
-        endOnSilence: 2.5,
-        maxDuration: 60,
-        startTimeout: 15,
-        sensitivity: 75,
-        saveAudio: true
-      },
-      eventUrl: [`${baseUrl}/webhooks/asr`],
-      eventMethod: "POST"
     }
   ];
 }
 
 export function continueListeningNCCO(baseUrl) {
-  return [
-    {
-      action: "input",
-      type: ["speech"],
-      speech: {
-        language: "en-US",
-        endOnSilence: 2.5,
-        maxDuration: 60,
-        startTimeout: 15,
-        sensitivity: 75,
-        saveAudio: true
-      },
-      eventUrl: [`${baseUrl}/webhooks/asr`],
-      eventMethod: "POST"
-    }
-  ];
+  return [];
 }
