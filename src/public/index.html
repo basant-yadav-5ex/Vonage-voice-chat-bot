@@ -14,6 +14,7 @@
     <div class="left-panel">
       <header>Voice Chat Bridge</header>
       <div class="controls">
+        <input type="text" id="phoneNumber" placeholder="Enter phone number" value="+17813044745">
         <button class="start" onclick="startCall()">📞 Start Call</button>
         <button class="end" onclick="endCall()" disabled>📴 End Call</button>
       </div>
@@ -267,19 +268,43 @@
     }
 
     // Listen for combined voice messages (text + audio together)
+    // socket.on("voice-message", (data) => {
+    //   hideTypingDots();
+    //   console.log("Received voice message:", data);
+
+    //   // Add a single message with both text and audio using the message ID
+    //   addVoiceMessage(data.text, data.audio, data.id, true);
+
+    //   // Only show typing dots if it's not a sorry message
+    //   if (data.text && !data.text.toLowerCase().includes("sorry") &&
+    //     !data.text.toLowerCase().includes("didn't catch") &&
+    //     !data.text.toLowerCase().includes("repeat")) {
+    //     showTypingDots();
+    //   }
+    // });
+
     socket.on("voice-message", (data) => {
+
+      if (!isCallActive) {
+        console.log("Ignored message after call ended");
+        return;
+      }
+
       hideTypingDots();
+
       console.log("Received voice message:", data);
 
-      // Add a single message with both text and audio using the message ID
       addVoiceMessage(data.text, data.audio, data.id, true);
 
-      // Only show typing dots if it's not a sorry message
-      if (data.text && !data.text.toLowerCase().includes("sorry") &&
+      if (
+        data.text &&
+        !data.text.toLowerCase().includes("sorry") &&
         !data.text.toLowerCase().includes("didn't catch") &&
-        !data.text.toLowerCase().includes("repeat")) {
+        !data.text.toLowerCase().includes("repeat")
+      ) {
         showTypingDots();
       }
+
     });
 
     // Keep status messages separate
@@ -310,11 +335,20 @@
     });
 
     async function startCall() {
-      addVoiceMessage("📞 Calling +17813044745...", null, `outbound-${Date.now()}`, false, 'sent', true);
+      const number = document.getElementById("phoneNumber").value;
+      console.log('Called this number:::::::::>>>>>', number);
+
+      addVoiceMessage(`📞 Calling ${number}`, null, `outbound-${Date.now()}`, false, 'sent', true);
       // Added isSystem = true as the 6th parameter ↑
 
       try {
-        const response = await fetch("/api/call/start", { method: "POST" });
+        const response = await fetch("/api/call/start", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ number })
+        });
         if (!response.ok) {
           addVoiceMessage("❌ Failed to start call", null, `error-${Date.now()}`, true);
           isCallActive = false;
