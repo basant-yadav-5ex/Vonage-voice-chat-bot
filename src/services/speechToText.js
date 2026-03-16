@@ -27,7 +27,7 @@ export async function transcribeAudio(audioBase64, utteranceId) {
     // Call Python script
     let stdout, stderr;
     try {
-      const output = await execFileAsync("python", [
+      const output = await execFileAsync("python3", [
         path.join(__dirname, "./pythonLibrarySTT.py"),
         wavFilePath
       ], { 
