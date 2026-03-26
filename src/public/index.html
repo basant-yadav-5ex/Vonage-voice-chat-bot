@@ -267,23 +267,7 @@
         typingEl = null;
       }
     }
-
-    // Listen for combined voice messages (text + audio together)
-    // socket.on("voice-message", (data) => {
-    //   hideTypingDots();
-    //   console.log("Received voice message:", data);
-
-    //   // Add a single message with both text and audio using the message ID
-    //   addVoiceMessage(data.text, data.audio, data.id, true);
-
-    //   // Only show typing dots if it's not a sorry message
-    //   if (data.text && !data.text.toLowerCase().includes("sorry") &&
-    //     !data.text.toLowerCase().includes("didn't catch") &&
-    //     !data.text.toLowerCase().includes("repeat")) {
-    //     showTypingDots();
-    //   }
-    // });
-
+    
     socket.on("voice-message", (data) => {
 
       if (data && data.callId && data.callId !== currentCallId) {
@@ -293,6 +277,11 @@
 
       if (!isCallActive) {
         console.log("Ignored message after call ended");
+        return;
+      }
+
+      if (!data?.text || !data.text.trim()) {
+        console.log("Ignored audio-only message (no text)");
         return;
       }
 
