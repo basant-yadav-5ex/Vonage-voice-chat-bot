@@ -5,6 +5,8 @@ import os
 
 # Suppress warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+import warnings
+warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
 
 if len(sys.argv) < 2:
     sys.stdout.write(json.dumps({"text": "", "success": False})+'\n')
@@ -17,7 +19,7 @@ try:
     model = whisper.load_model("base")
     
     # Transcribe
-    result = model.transcribe(audio_path)
+    result = model.transcribe(audio_path, fp16=False)
     
     text = result.get("text", "").strip() if result else ""
     

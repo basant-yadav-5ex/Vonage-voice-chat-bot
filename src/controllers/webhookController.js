@@ -3,6 +3,8 @@ import { initialNCCO } from "../ncco/ncco.js";
 
 export function handleAnswer(req, res) {
   callState.activeCallUuid = req.query.uuid;
+  callState.sessionId = req.query.uuid;
+  callState.sessionToken += 1;
   callState.isCallActive = true;
   callState.callStartTime = Date.now();
   console.log(">> Answer webhook — uuid:", callState.activeCallUuid);
@@ -19,10 +21,14 @@ export function handleEvent(req, res, io) {
   // Only track UUID if call becomes active
   if (status === "answered" && uuid) {
     callState.activeCallUuid = uuid;
+    callState.sessionId = uuid;
+    callState.sessionToken += 1;
     callState.isCallActive = true;
     callState.callStartTime = Date.now();
     resetInactivityTimer();
     console.log(">> Call answered:", uuid);
+
+    io.emit("call-session", { callId: callState.sessionId, isActive: true });
   }
 
   // Transfer event
@@ -42,6 +48,7 @@ export function handleEvent(req, res, io) {
     console.log(">> Cleaning up call:", uuid);
 
     callState.activeCallUuid = null;
+    callState.sessionId = null;
     callState.isCallActive = false;
     callState.callStartTime = null;
     callState.isSpeaking = false;
@@ -55,8 +62,11 @@ export function handleEvent(req, res, io) {
     }
 
     io.emit("status", "📴 Call ended");
+    io.emit("call-session", { callId: null, isActive: false });
     console.log(">> Call ended event emitted");
   }
 
   res.sendStatus(200);
 }
+
+

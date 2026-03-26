@@ -39,6 +39,7 @@
     let isCallActive = false;
     let typingEl = null;
     let currentlyPlaying = null;
+    let currentCallId = null;
     const messageIds = new Set(); // Track message IDs to prevent duplicates
 
     function getTimestamp() {
@@ -285,6 +286,11 @@
 
     socket.on("voice-message", (data) => {
 
+      if (data && data.callId && data.callId !== currentCallId) {
+        console.log("Ignored message from previous call:", data.callId);
+        return;
+      }
+
       if (!isCallActive) {
         console.log("Ignored message after call ended");
         return;
@@ -307,6 +313,20 @@
 
     });
 
+    socket.on("call-session", (data) => {
+      currentCallId = data?.callId || null;
+      isCallActive = !!data?.isActive;
+      updateCallButtons();
+
+      if (isCallActive) {
+        messageIds.clear();
+      } else {
+        hideTypingDots();
+        chat.innerHTML = "";
+        messageIds.clear();
+      }
+    });
+
     // Keep status messages separate
     socket.on("status", (msg) => {
       if (msg.includes("Call connected")) {
@@ -320,12 +340,6 @@
         updateCallButtons();
         addVoiceMessage(msg, null, `status-${Date.now()}`, true);
         hideTypingDots();
-
-        // Clear full chat
-        chat.innerHTML = "";
-
-        // Clear message ID cache
-        messageIds.clear();
       } else if (msg === "typing") {
         // Handle typing indicator from server
         showTypingDots();

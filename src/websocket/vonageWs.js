@@ -228,6 +228,7 @@ export default function setupVonageWs(server, io) {
     let hasSpoken = false;
     let currentUtteranceId = null;
     let utteranceStartTime = null;
+    let currentUtteranceToken = null;
 
     const SILENCE_THRESHOLD = 150;
     const SILENCE_REQUIRED = 120;
@@ -271,6 +272,7 @@ export default function setupVonageWs(server, io) {
           utteranceStartTime = Date.now();
           currentUtteranceId =
             `utt_${utteranceStartTime}_${++callState.messageCounter}`;
+          currentUtteranceToken = callState.sessionToken;
 
           console.log(`>> Started recording: ${currentUtteranceId}`);
         }
@@ -297,6 +299,7 @@ export default function setupVonageWs(server, io) {
                 const audioBase64 = wavBuffer.toString("base64");
 
                 const utteranceId = currentUtteranceId;
+                const utteranceToken = currentUtteranceToken;
 
                 console.log(`>> 🎤 Complete audio: ${utteranceId}`);
 
@@ -304,6 +307,10 @@ export default function setupVonageWs(server, io) {
                   .then((result) => {
 
                     if (!utteranceId) return;
+                    if (utteranceToken !== callState.sessionToken) {
+                      console.log(`>> Skipping stale utterance: ${utteranceId}`);
+                      return;
+                    }
 
                     console.log(`>> ✅ Whisper text: "${result.text}"`);
 
@@ -311,6 +318,7 @@ export default function setupVonageWs(server, io) {
                       id: utteranceId,
                       text: result.text,
                       audio: audioBase64,
+                      callId: callState.sessionId,
                       timestamp: Date.now(),
                       isComplete: true,
                       source: "whisper"
@@ -329,10 +337,16 @@ export default function setupVonageWs(server, io) {
 
                     console.error(`>> ❌ Whisper failed: ${error.message}`);
 
+                    if (utteranceToken !== callState.sessionToken) {
+                      console.log(`>> Skipping stale utterance (error): ${utteranceId}`);
+                      return;
+                    }
+
                     io.emit("voice-message", {
                       id: utteranceId,
                       text: "",
                       audio: audioBase64,
+                      callId: callState.sessionId,
                       timestamp: Date.now(),
                       isComplete: true,
                       source: "audio-only"
@@ -347,6 +361,7 @@ export default function setupVonageWs(server, io) {
             hasSpoken = false;
             currentUtteranceId = null;
             utteranceStartTime = null;
+            currentUtteranceToken = null;
           }
         }
       }
@@ -359,6 +374,7 @@ export default function setupVonageWs(server, io) {
       callState.isSpeaking = false;
       callState.pendingText = null;
       callState.pendingAudio = null;
+      callState.sessionId = null;
 
       if (callState.asrTimeoutId) {
         clearTimeout(callState.asrTimeoutId);
@@ -370,8 +386,10 @@ export default function setupVonageWs(server, io) {
       hasSpoken = false;
       currentUtteranceId = null;
       utteranceStartTime = null;
+      currentUtteranceToken = null;
 
       io.emit("status", "Call ended");
+      io.emit("call-session", { callId: null, isActive: false });
 
     });
 

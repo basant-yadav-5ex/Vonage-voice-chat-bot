@@ -8,12 +8,15 @@ export async function startCall(req, res, io) {
     const call = await makeCallWithRetry(number);
 
     callState.activeCallUuid = call.uuid;
+    callState.sessionId = call.uuid;
+    callState.sessionToken += 1;
     callState.isCallActive = true;
     callState.callStartTime = Date.now();
 
     resetInactivityTimer();
 
     io.emit("status", "📞 Call connected");
+    io.emit("call-session", { callId: callState.sessionId, isActive: true });
 
     res.json({ success: true, uuid: call.uuid });
   } catch (err) {
@@ -32,6 +35,7 @@ export async function endCall(req, res, io) {
 
     // Force cleanup
     callState.activeCallUuid = null;
+    callState.sessionId = null;
     callState.isCallActive = false;
     callState.callStartTime = null;
     callState.isSpeaking = false;
@@ -45,12 +49,14 @@ export async function endCall(req, res, io) {
     }
 
     io.emit("status", "📴 Call ended");
+    io.emit("call-session", { callId: null, isActive: false });
     console.log('Ended call ::::::::::::::::::>>>>>>>>>::::::::::::::::::')
     res.json({ success: true });
   } catch (err) {
     console.error("Call end error:", err.message);
 
     callState.activeCallUuid = null;
+    callState.sessionId = null;
     callState.isCallActive = false;
 
     res.status(500).json({
@@ -95,3 +101,5 @@ async function hangupWithRetry(uuid, retries = callState.retryNumber) {
     }
   }
 }
+
+

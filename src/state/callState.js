@@ -1,5 +1,7 @@
 export const callState = {
   activeCallUuid: null,
+  sessionId: null,
+  sessionToken: 0,
   isCallActive: false,
   callStartTime: null,
   isSpeaking: false,
@@ -32,6 +34,7 @@ export function resetInactivityTimer() {
           await vonage.voice.hangupCall(callState.activeCallUuid);
 
           callState.activeCallUuid = null;
+          callState.sessionId = null;
           callState.isCallActive = false;
           callState.callStartTime = null;
           callState.isSpeaking = false;
@@ -62,6 +65,7 @@ export function clearCallState() {
   }
 
   callState.activeCallUuid = null;
+  callState.sessionId = null;
   callState.isCallActive = false;
   callState.callStartTime = null;
   callState.isSpeaking = false;
