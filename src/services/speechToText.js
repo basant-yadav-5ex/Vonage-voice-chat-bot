@@ -11,14 +11,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * Transcribe audio using Python Whisper library
  */
 export async function transcribeAudio(audioBase64, utteranceId) {
+  const tempDir = path.join(__dirname, "../../recordings");
+  const wavFilePath = path.join(tempDir, `${utteranceId}.wav`);
+
   try {
-    const tempDir = path.join(__dirname, "../../recordings");
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
     // Write audio to recordings file
-    const wavFilePath = path.join(tempDir, `${utteranceId}.wav`);
     const audioBuffer = Buffer.from(audioBase64, "base64");
     fs.writeFileSync(wavFilePath, audioBuffer);
 
@@ -26,8 +27,12 @@ export async function transcribeAudio(audioBase64, utteranceId) {
 
     // Call Python script
     let stdout, stderr;
+    let execFailure = null;
     try {
-      const output = await execFileAsync("python3", [
+      const defaultPython = process.platform === "win32" ? "python" : "python3";
+      const pythonBin = process.env.PYTHON_BIN || defaultPython;
+      console.log(`>> Using Python bin: ${pythonBin}`);
+      const output = await execFileAsync(pythonBin, [
         path.join(__dirname, "./pythonLibrarySTT.py"),
         wavFilePath
       ], { 
@@ -37,10 +42,18 @@ export async function transcribeAudio(audioBase64, utteranceId) {
       stdout = output.stdout;
       stderr = output.stderr;
     } catch (execError) {
+      execFailure = execError;
+      stdout = execError.stdout || "";
+      stderr = execError.stderr || "";
       console.error(`>> Python execution error:`, execError.message);
-      console.error(`>> stdout:`, execError.stdout);
-      console.error(`>> stderr:`, execError.stderr);
-      throw execError;
+      if (execError.code !== undefined) {
+        console.error(`>> Python exit code:`, execError.code);
+      }
+      if (execError.signal) {
+        console.error(`>> Python signal:`, execError.signal);
+      }
+      if (stdout) console.error(`>> stdout:`, stdout);
+      if (stderr) console.error(`>> stderr:`, stderr);
     }
 
     console.log(`>> Python stdout: "${stdout}"`);
@@ -49,7 +62,7 @@ export async function transcribeAudio(audioBase64, utteranceId) {
     // Parse JSON response
     let result;
     try {
-      result = JSON.parse(stdout);
+      result = JSON.parse(stdout || "{}");
     } catch (parseError) {
       console.error(`>> JSON parse error:`, parseError.message);
       console.error(`>> Raw stdout:`, stdout);
@@ -57,7 +70,8 @@ export async function transcribeAudio(audioBase64, utteranceId) {
     }
     
     if (!result.success) {
-      throw new Error(result.error || "Transcription failed");
+      const fallback = execFailure?.message || (stderr ? stderr.trim() : "");
+      throw new Error(result.error || fallback || "Transcription failed");
     }
     
     // Cleanup recordings file
@@ -77,7 +91,6 @@ export async function transcribeAudio(audioBase64, utteranceId) {
     
     // Cleanup on error
     try {
-      const wavFilePath = path.join(tempDir, `${utteranceId}.wav`);
       if (fs.existsSync(wavFilePath)) {
         fs.unlinkSync(wavFilePath);
       }
