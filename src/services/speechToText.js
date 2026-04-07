@@ -13,6 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export async function transcribeAudio(audioBase64, utteranceId) {
   const tempDir = path.join(__dirname, "../../recordings");
   const wavFilePath = path.join(tempDir, `${utteranceId}.wav`);
+  const keepRecordings = String(process.env.KEEP_RECORDINGS || "").toLowerCase() === "true";
 
   try {
     if (!fs.existsSync(tempDir)) {
@@ -23,37 +24,60 @@ export async function transcribeAudio(audioBase64, utteranceId) {
     const audioBuffer = Buffer.from(audioBase64, "base64");
     fs.writeFileSync(wavFilePath, audioBuffer);
 
+    if (!fs.existsSync(wavFilePath)) {
+      throw new Error(`WAV write failed (file missing): ${wavFilePath}`);
+    }
+
+    const fileStats = fs.statSync(wavFilePath);
+    console.log(`>> WAV size: ${fileStats.size} bytes`);
+    if (fileStats.size < 1024) {
+      throw new Error(`Audio too short (${fileStats.size} bytes)`);
+    }
+
     console.log(`>> Calling Python Whisper on: ${wavFilePath}`);
 
-    // Call Python script
-    let stdout, stderr;
-    let execFailure = null;
-    try {
-      const defaultPython = process.platform === "win32" ? "python" : "python3";
-      const pythonBin = process.env.PYTHON_BIN || defaultPython;
-      console.log(`>> Using Python bin: ${pythonBin}`);
-      const output = await execFileAsync(pythonBin, [
-        path.join(__dirname, "./pythonLibrarySTT.py"),
-        wavFilePath
-      ], { 
-        timeout: 120000,
-        maxBuffer: 10 * 1024 * 1024
-      });
-      stdout = output.stdout;
-      stderr = output.stderr;
-    } catch (execError) {
-      execFailure = execError;
-      stdout = execError.stdout || "";
-      stderr = execError.stderr || "";
-      console.error(`>> Python execution error:`, execError.message);
-      if (execError.code !== undefined) {
-        console.error(`>> Python exit code:`, execError.code);
+    const defaultPython = process.platform === "win32" ? "python" : "python3";
+    const pythonBin = process.env.PYTHON_BIN || defaultPython;
+    const timeoutMs = Number(process.env.WHISPER_TIMEOUT_MS || 180000);
+    const maxBuffer = 10 * 1024 * 1024;
+    console.log(`>> Using Python bin: ${pythonBin}`);
+    console.log(`>> Whisper timeout: ${timeoutMs}ms`);
+
+    const runWhisper = async () => {
+      let stdout, stderr;
+      let execFailure = null;
+      try {
+        const output = await execFileAsync(pythonBin, [
+          path.join(__dirname, "./pythonLibrarySTT.py"),
+          wavFilePath
+        ], { 
+          timeout: timeoutMs,
+          maxBuffer
+        });
+        stdout = output.stdout;
+        stderr = output.stderr;
+      } catch (execError) {
+        execFailure = execError;
+        stdout = execError.stdout || "";
+        stderr = execError.stderr || "";
+        console.error(`>> Python execution error:`, execError.message);
+        if (execError.code !== undefined) {
+          console.error(`>> Python exit code:`, execError.code);
+        }
+        if (execError.signal) {
+          console.error(`>> Python signal:`, execError.signal);
+        }
+        if (stdout) console.error(`>> stdout:`, stdout);
+        if (stderr) console.error(`>> stderr:`, stderr);
       }
-      if (execError.signal) {
-        console.error(`>> Python signal:`, execError.signal);
-      }
-      if (stdout) console.error(`>> stdout:`, stdout);
-      if (stderr) console.error(`>> stderr:`, stderr);
+      return { stdout, stderr, execFailure };
+    };
+
+    let { stdout, stderr, execFailure } = await runWhisper();
+    if (execFailure?.signal === "SIGTERM") {
+      console.warn(">> Whisper SIGTERM detected. Retrying once after 1500ms...");
+      await new Promise((r) => setTimeout(r, 1500));
+      ({ stdout, stderr, execFailure } = await runWhisper());
     }
 
     console.log(`>> Python stdout: "${stdout}"`);
@@ -75,7 +99,7 @@ export async function transcribeAudio(audioBase64, utteranceId) {
     }
     
     // Cleanup recordings file
-    if (fs.existsSync(wavFilePath)) {
+    if (!keepRecordings && fs.existsSync(wavFilePath)) {
       fs.unlinkSync(wavFilePath);
     }
 
@@ -91,7 +115,7 @@ export async function transcribeAudio(audioBase64, utteranceId) {
     
     // Cleanup on error
     try {
-      if (fs.existsSync(wavFilePath)) {
+      if (!keepRecordings && fs.existsSync(wavFilePath)) {
         fs.unlinkSync(wavFilePath);
       }
     } catch (e) {}

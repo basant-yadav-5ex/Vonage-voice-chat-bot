@@ -29,9 +29,9 @@ export default function setupVonageWs(server, io) {
     let utteranceStartTime = null;
     let currentUtteranceToken = null;
 
-    const SILENCE_THRESHOLD = 150;
-    const SILENCE_REQUIRED = 120;
-    const MIN_AUDIO_BYTES = 3200;
+    const SILENCE_THRESHOLD = Number(process.env.SILENCE_THRESHOLD || 170);
+    const SILENCE_REQUIRED = Number(process.env.SILENCE_REQUIRED || 60);
+    const MIN_AUDIO_BYTES = Number(process.env.MIN_AUDIO_BYTES || 1600);
 
     ws.on("message", (data, isBinary) => {
 
