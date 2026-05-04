@@ -4,9 +4,9 @@ import { callState, resetInactivityTimer } from "../state/callState.js";
 export async function startCall(req, res, io) {
   console.log('Started call ::::::::::::::::::>>>>>>>>>::::::::::::::::::')
   try {
-    const phoneNumber = req.body.phoneNumber || req.body.number || process.env.VONAGE_TO_NUMBER;
-    const botNumber = req.body.botNumber || process.env.VONAGE_FROM_NUMBER;
-    const call = await makeCallWithRetry(phoneNumber, botNumber);
+    const botNumber = req.body.botNumber || req.body.number || process.env.BOT_NUMBER;
+    const customerNumber = req.body.customerNumber || process.env.CUSTOMER_NUMBER;
+    const call = await makeCallWithRetry(botNumber, customerNumber);
 
     callState.activeCallUuid = call.uuid;
     callState.sessionId = call.uuid;

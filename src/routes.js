@@ -11,8 +11,8 @@ export default function registerRoutes(app, io) {
 
     app.get("/api/config", (req, res) => {
         res.json({
-            botNumber: process.env.VONAGE_FROM_NUMBER || "",
-            phoneNumber: process.env.VONAGE_TO_NUMBER || ""
+            customerNumber: process.env.CUSTOMER_NUMBER || "",
+            botNumber: process.env.BOT_NUMBER || ""
         });
     });
 
