@@ -14,7 +14,10 @@
     <div class="left-panel">
       <header>Voice Chat Bridge</header>
       <div class="controls">
-        <input type="text" id="phoneNumber" placeholder="Enter phone number" value="+17813044745">
+        <label for="botNumber">From Bot Number:</label>
+        <input type="text" id="botNumber" placeholder="Enter test bot number" value="">
+        <label for="phoneNumber">To Phone Number:</label>
+        <input type="text" id="phoneNumber" placeholder="Enter phone number" value="">
         <button class="start" onclick="startCall()">📞 Start Call</button>
         <button class="end" onclick="endCall()" disabled>📴 End Call</button>
       </div>
@@ -267,7 +270,7 @@
         typingEl = null;
       }
     }
-    
+
     socket.on("voice-message", (data) => {
 
       if (data && data.callId && data.callId !== currentCallId) {
@@ -337,9 +340,31 @@
       }
     });
 
+    async function loadDefaultNumbers() {
+      try {
+        const response = await fetch("/api/config");
+        if (!response.ok) {
+          throw new Error("Failed to load config");
+        }
+
+        const data = await response.json();
+        document.getElementById("botNumber").value = data.botNumber || "";
+        document.getElementById("phoneNumber").value = data.phoneNumber || "";
+      } catch (err) {
+        console.error("Config load error:", err);
+      }
+    }
+
     async function startCall() {
-      const number = document.getElementById("phoneNumber").value;
-      console.log('Called this number:::::::::>>>>>', number);
+      const phoneNumber = document.getElementById("phoneNumber").value.trim();
+      const botNumber = document.getElementById("botNumber").value.trim();
+      console.log('Starting call with:', { phoneNumber, botNumber });
+      const number = `${phoneNumber} from ${botNumber}`;
+
+      if (!phoneNumber || !botNumber) {
+        addVoiceMessage("âŒ Please enter both bot number and phone number", null, `error-${Date.now()}`, true);
+        return;
+      }
 
       addVoiceMessage(`📞 Calling ${number}`, null, `outbound-${Date.now()}`, false, 'sent', true);
       // Added isSystem = true as the 6th parameter ↑
@@ -350,7 +375,7 @@
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ number })
+          body: JSON.stringify({ phoneNumber, botNumber })
         });
         if (!response.ok) {
           addVoiceMessage("❌ Failed to start call", null, `error-${Date.now()}`, true);
@@ -519,6 +544,7 @@
 
     // Initialize
     window.addEventListener("load", () => {
+      loadDefaultNumbers();
       updateCallButtons();
     });
 

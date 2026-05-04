@@ -4,8 +4,9 @@ import { callState, resetInactivityTimer } from "../state/callState.js";
 export async function startCall(req, res, io) {
   console.log('Started call ::::::::::::::::::>>>>>>>>>::::::::::::::::::')
   try {
-    const number = req.body.number || process.env.VONAGE_TO_NUMBER;
-    const call = await makeCallWithRetry(number);
+    const phoneNumber = req.body.phoneNumber || req.body.number || process.env.VONAGE_TO_NUMBER;
+    const botNumber = req.body.botNumber || process.env.VONAGE_FROM_NUMBER;
+    const call = await makeCallWithRetry(phoneNumber, botNumber);
 
     callState.activeCallUuid = call.uuid;
     callState.sessionId = call.uuid;
@@ -66,12 +67,12 @@ export async function endCall(req, res, io) {
   }
 }
 
-async function makeCallWithRetry(number, retries = callState.retryNumber) {
+async function makeCallWithRetry(number, fromNumber, retries = callState.retryNumber) {
   for (let i = 0; i < retries; i++) {
     try {
       const call = await vonage.voice.createOutboundCall({
         to: [{ type: "phone", number: number }],
-        from: { type: "phone", number: process.env.VONAGE_FROM_NUMBER },
+        from: { type: "phone", number: fromNumber },
         answer_url: [`${process.env.BASE_URL}/webhooks/answer`],
         event_url: [`${process.env.BASE_URL}/webhooks/event`]
       });

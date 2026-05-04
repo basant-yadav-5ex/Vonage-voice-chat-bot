@@ -9,6 +9,13 @@ export default function registerRoutes(app, io) {
         startCall(req, res, io)
     );
 
+    app.get("/api/config", (req, res) => {
+        res.json({
+            botNumber: process.env.VONAGE_FROM_NUMBER || "",
+            phoneNumber: process.env.VONAGE_TO_NUMBER || ""
+        });
+    });
+
     app.post("/api/call/end", (req, res) =>
         endCall(req, res, io)
     );
