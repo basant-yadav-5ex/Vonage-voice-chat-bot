@@ -12,7 +12,7 @@
 <body>
   <div class="app">
     <div class="left-panel">
-      <header>Voice Chat Bridge</header>
+      <header>Voice ↔ Chat Bridge</header>
       <div class="controls">
         <label for="customerNumber">From Customer Number:</label>
         <input type="text" id="customerNumber" placeholder="Enter customer number" value="">
@@ -42,56 +42,68 @@
     let isCallActive = false;
     let typingEl = null;
     let currentlyPlaying = null;
+    let currentlyPlayingButton = null;
     let currentCallId = null;
-    const messageIds = new Set(); // Track message IDs to prevent duplicates
+    const messageIds = new Set();
 
     function getTimestamp() {
       const now = new Date();
-      return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
+      return now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }).toLowerCase();
     }
 
-    // Clean text function
     function cleanText(text) {
-      if (!text) return '';
+      if (!text) return "";
       return text
-        .replace(/Ava from/gi, 'AIVA')
-        .replace(/able from/gi, 'AIVA')
-        .replace(/AIVA from/gi, 'AIVA')
-        .replace(/\s+/g, ' ')
+        .replace(/Ava from/gi, "AIVA")
+        .replace(/able from/gi, "AIVA")
+        .replace(/AIVA from/gi, "AIVA")
+        .replace(/\s+/g, " ")
         .trim();
     }
 
-    // Add this to your index.js file - now you can type checkHealth() in browser console
+    function stopActivePlayback() {
+      if (currentlyPlaying) {
+        currentlyPlaying.pause();
+        currentlyPlaying.currentTime = 0;
+        currentlyPlaying = null;
+      }
+
+      if (currentlyPlayingButton) {
+        currentlyPlayingButton.classList.remove("playing");
+        currentlyPlayingButton.innerHTML = "🔊";
+        currentlyPlayingButton.title = "Play voice recording";
+        currentlyPlayingButton = null;
+      }
+    }
+
     window.checkHealth = async function () {
       try {
-        const response = await fetch('/api/health');
+        const response = await fetch("/api/health");
         const data = await response.json();
-        console.log('🔍 VONAGE HEALTH CHECK 🔍');
-        console.log('=========================');
-        console.log('📞 Call Active:', data.isCallActive ? '✅ YES' : '❌ NO');
-        console.log('🎤 Bot Speaking:', data.isSpeaking ? '🔊 YES' : '🤐 NO');
-        console.log('🆔 Call UUID:', data.activeCallUuid || 'None');
-        console.log('⏱️  Server Uptime:', Math.floor(data.uptime / 60) + 'm ' + Math.floor(data.uptime % 60) + 's');
-        console.log('📊 Queue Status:');
-        console.log('   - Pending Audio:', data.hasPendingAudio ? '✅' : '❌');
-        console.log('   - Pending Text:', data.hasPendingText ? '✅' : '❌');
+        console.log("VONAGE HEALTH CHECK");
+        console.log("=========================");
+        console.log("Call Active:", data.isCallActive ? "YES" : "NO");
+        console.log("Bot Speaking:", data.isSpeaking ? "YES" : "NO");
+        console.log("Call UUID:", data.activeCallUuid || "None");
+        console.log("Server Uptime:", Math.floor(data.uptime / 60) + "m " + Math.floor(data.uptime % 60) + "s");
+        console.log("Queue Status:");
+        console.log("   - Pending Audio:", data.hasPendingAudio ? "YES" : "NO");
+        console.log("   - Pending Text:", data.hasPendingText ? "YES" : "NO");
         if (data.pendingTextContent) {
           console.log('   - Pending Text Content: "' + data.pendingTextContent + '"');
         }
-        console.log('   - Audio Complete:', data.pendingAudioComplete ? '✅' : '❌');
-        console.log('   - Text Complete:', data.pendingTextComplete ? '✅' : '❌');
-        console.log('=========================');
+        console.log("   - Audio Complete:", data.pendingAudioComplete ? "YES" : "NO");
+        console.log("   - Text Complete:", data.pendingTextComplete ? "YES" : "NO");
+        console.log("=========================");
         return data;
       } catch (err) {
-        console.error('❌ Health check failed:', err);
+        console.error("Health check failed:", err);
       }
     };
 
-    // Add a combined voice message with text AND audio together
-    function addVoiceMessage(text, audioBase64, messageId, isFromBot = true, status = 'sent', isSystem = false) {
-      // Prevent duplicate messages
+    function addVoiceMessage(text, audioBase64, messageId, isFromBot = true, status = "sent", isSystem = false) {
       if (messageId && messageIds.has(messageId)) {
-        console.log('Duplicate message prevented:', messageId);
+        console.log("Duplicate message prevented:", messageId);
         return null;
       }
 
@@ -101,100 +113,70 @@
 
       const messageDiv = document.createElement("div");
 
-      // System messages appear on the right but without status indicators
       if (isSystem) {
-        messageDiv.className = `message me`;
+        messageDiv.className = "message me";
       } else {
-        messageDiv.className = `message ${isFromBot ? 'bot' : 'me'}`;
+        messageDiv.className = `message ${isFromBot ? "bot" : "me"}`;
       }
 
-      if (!isFromBot && !isSystem && status === 'failed') {
-        messageDiv.classList.add('error');
+      if (!isFromBot && !isSystem && status === "failed") {
+        messageDiv.classList.add("error");
       }
       messageDiv.dataset.messageId = messageId || Date.now();
 
       const bubble = document.createElement("div");
       bubble.className = "message-bubble";
 
-      // Voice button - show if we have audio
       if (audioBase64) {
         const voiceBtn = document.createElement("button");
+        const messageSessionId = currentCallId;
         voiceBtn.className = "voice-btn";
-        voiceBtn.innerHTML = "🔊"; // Start with play icon
+        voiceBtn.innerHTML = "🔊";
         voiceBtn.title = "Play voice recording";
 
         const audioSrc = `data:audio/wav;base64,${audioBase64}`;
-        let audio = null; // Will be created on first play
+        let audio = null;
 
         voiceBtn.addEventListener("click", function (e) {
           e.stopPropagation();
 
-          // If this button is already playing, stop it
-          if (this.classList.contains("playing")) {
-            if (audio) {
-              audio.pause();
-              audio.currentTime = 0;
-              audio = null;
-            }
-            this.classList.remove("playing");
-            this.innerHTML = "🔊"; // Back to play icon
-            this.title = "Play voice recording";
-
-            // Clear currentlyPlaying if it's this audio
-            if (currentlyPlaying === audio) {
-              currentlyPlaying = null;
-            }
+          if (!isCallActive || !messageSessionId || messageSessionId !== currentCallId) {
+            stopActivePlayback();
             return;
           }
 
-          // Stop any other currently playing audio
-          if (currentlyPlaying) {
-            // Find and reset the playing button
-            const prevBtn = document.querySelector(".voice-btn.playing");
-            if (prevBtn) {
-              prevBtn.classList.remove("playing");
-              prevBtn.innerHTML = "🔊";
-              prevBtn.title = "Play voice recording";
-            }
-            currentlyPlaying.pause();
-            currentlyPlaying.currentTime = 0;
-            currentlyPlaying = null;
+          if (this.classList.contains("playing")) {
+            stopActivePlayback();
+            audio = null;
+            return;
           }
 
-          // Create new audio if needed
+          stopActivePlayback();
+
           if (!audio) {
             audio = new Audio(audioSrc);
 
             audio.onended = () => {
-              this.classList.remove("playing");
-              this.innerHTML = "🔊";
-              this.title = "Play voice recording";
-              currentlyPlaying = null;
-              audio = null; // Allow recreation if played again
+              stopActivePlayback();
+              audio = null;
             };
 
             audio.onerror = (err) => {
               console.error("Audio playback error:", err);
-              this.classList.remove("playing");
-              this.innerHTML = "🔊";
-              this.title = "Play voice recording";
-              currentlyPlaying = null;
+              stopActivePlayback();
               audio = null;
             };
           }
 
-          // Play the audio
           currentlyPlaying = audio;
+          currentlyPlayingButton = this;
           this.classList.add("playing");
-          this.innerHTML = "⏸️"; // Change to pause icon
+          this.innerHTML = "⏸️";
           this.title = "Stop voice recording";
 
           audio.play().catch(err => {
             console.error("Playback failed:", err);
-            this.classList.remove("playing");
-            this.innerHTML = "🔊";
-            this.title = "Play voice recording";
-            currentlyPlaying = null;
+            stopActivePlayback();
             audio = null;
           });
         });
@@ -202,36 +184,30 @@
         bubble.appendChild(voiceBtn);
       }
 
-      // Message text
       const textSpan = document.createElement("span");
       textSpan.className = "message-text";
-      textSpan.textContent = cleanText(text) || (isFromBot ? 'Voice message' : '');
-
+      textSpan.textContent = cleanText(text) || (isFromBot ? "Voice message" : "");
       bubble.appendChild(textSpan);
 
-      // Add status indicator ONLY for user messages that are NOT system messages
       if (!isFromBot && !isSystem) {
         const statusSpan = document.createElement("span");
         statusSpan.className = "message-status";
 
-        if (status === 'sent') {
-          statusSpan.innerHTML = '✓✓';
-          statusSpan.classList.add('status-sent');
-          statusSpan.title = 'Sent';
-        } else if (status === 'failed') {
-          statusSpan.innerHTML = '⚠️';
-          statusSpan.classList.add('status-failed');
-          statusSpan.title = 'Failed to send';
+        if (status === "sent") {
+          statusSpan.innerHTML = "✓✓";
+          statusSpan.classList.add("status-sent");
+          statusSpan.title = "Sent";
+        } else if (status === "failed") {
+          statusSpan.innerHTML = "⚠️";
+          statusSpan.classList.add("status-failed");
+          statusSpan.title = "Failed to send";
 
-          // Add retry button for failed messages
           const retryBtn = document.createElement("button");
           retryBtn.className = "retry-btn";
           retryBtn.innerHTML = "Retry";
           retryBtn.onclick = (e) => {
             e.stopPropagation();
-            // Remove the failed message
             messageDiv.remove();
-            // Retry sending the message
             input.value = text;
             send();
           };
@@ -241,7 +217,6 @@
         bubble.appendChild(statusSpan);
       }
 
-      // Timestamp
       const timestamp = document.createElement("span");
       timestamp.className = "timestamp";
       timestamp.textContent = getTimestamp();
@@ -253,7 +228,6 @@
 
       return messageDiv;
     }
-    // Add a combined voice message with text AND audio together
 
     function showTypingDots() {
       hideTypingDots();
@@ -272,7 +246,6 @@
     }
 
     socket.on("voice-message", (data) => {
-
       if (data && data.callId && data.callId !== currentCallId) {
         console.log("Ignored message from previous call:", data.callId);
         return;
@@ -289,9 +262,7 @@
       }
 
       hideTypingDots();
-
       console.log("Received voice message:", data);
-
       addVoiceMessage(data.text, data.audio, data.id, true);
 
       if (
@@ -302,7 +273,6 @@
       ) {
         showTypingDots();
       }
-
     });
 
     socket.on("call-session", (data) => {
@@ -313,27 +283,26 @@
       if (isCallActive) {
         messageIds.clear();
       } else {
+        stopActivePlayback();
         hideTypingDots();
         chat.innerHTML = "";
         messageIds.clear();
       }
     });
 
-    // Keep status messages separate
     socket.on("status", (msg) => {
       if (msg.includes("Call connected")) {
         isCallActive = true;
         updateCallButtons();
         addVoiceMessage(msg, null, `status-${Date.now()}`, true);
         showTypingDots();
-      }
-      else if (msg.includes("Call ended")) {
+      } else if (msg.includes("Call ended")) {
         isCallActive = false;
+        stopActivePlayback();
         updateCallButtons();
         addVoiceMessage(msg, null, `status-${Date.now()}`, true);
         hideTypingDots();
       } else if (msg === "typing") {
-        // Handle typing indicator from server
         showTypingDots();
       } else {
         addVoiceMessage(msg, null, `status-${Date.now()}`, true);
@@ -358,16 +327,14 @@
     async function startCall() {
       const botNumber = document.getElementById("botNumber").value.trim();
       const customerNumber = document.getElementById("customerNumber").value.trim();
-      console.log('Starting call with:', { botNumber, customerNumber });
-      const number = `${botNumber} from ${customerNumber}`;
+      console.log("Starting call with:", { botNumber, customerNumber });
 
       if (!botNumber || !customerNumber) {
-        addVoiceMessage("âŒ Please enter both bot number and phone number", null, `error-${Date.now()}`, true);
+        addVoiceMessage("Please enter both bot number and phone number", null, `error-${Date.now()}`, true);
         return;
       }
 
-      addVoiceMessage(`📞 Calling ${number}`, null, `outbound-${Date.now()}`, false, 'sent', true);
-      // Added isSystem = true as the 6th parameter ↑
+      addVoiceMessage(`📞 Calling ${botNumber} from ${customerNumber}`, null, `outbound-${Date.now()}`, false, "sent", true);
 
       try {
         const response = await fetch("/api/call/start", {
@@ -378,19 +345,20 @@
           body: JSON.stringify({ botNumber, customerNumber })
         });
         if (!response.ok) {
-          addVoiceMessage("❌ Failed to start call", null, `error-${Date.now()}`, true);
+          addVoiceMessage("Failed to start call", null, `error-${Date.now()}`, true);
           isCallActive = false;
           updateCallButtons();
         }
       } catch (err) {
         console.error("Call start error:", err);
-        addVoiceMessage("❌ Failed to start call", null, `error-${Date.now()}`, true);
+        addVoiceMessage("Failed to start call", null, `error-${Date.now()}`, true);
         isCallActive = false;
         updateCallButtons();
       }
     }
 
     async function endCall() {
+      stopActivePlayback();
       try {
         await fetch("/api/call/end", { method: "POST" });
       } catch (err) {
@@ -406,9 +374,8 @@
         return;
       }
 
-      // Add message with sending status
       const messageId = `user-${Date.now()}`;
-      const messageDiv = addVoiceMessage(text, null, messageId, false, 'sending');
+      const messageDiv = addVoiceMessage(text, null, messageId, false, "sending");
       input.value = "";
 
       try {
@@ -419,26 +386,21 @@
         });
 
         if (!response.ok) {
-          // Update the existing message to failed status instead of removing and re-adding
           if (messageDiv) {
-            // Clear the message bubble and rebuild with failed status
-            const bubble = messageDiv.querySelector('.message-bubble');
-            bubble.innerHTML = '';
+            const bubble = messageDiv.querySelector(".message-bubble");
+            bubble.innerHTML = "";
 
-            // Rebuild the bubble content
             const textSpan = document.createElement("span");
             textSpan.className = "message-text";
             textSpan.textContent = cleanText(text);
             bubble.appendChild(textSpan);
 
-            // Add failed status
             const statusSpan = document.createElement("span");
             statusSpan.className = "message-status status-failed";
-            statusSpan.innerHTML = '⚠️';
-            statusSpan.title = 'Failed to send';
+            statusSpan.innerHTML = "⚠️";
+            statusSpan.title = "Failed to send";
             bubble.appendChild(statusSpan);
 
-            // Add retry button
             const retryBtn = document.createElement("button");
             retryBtn.className = "retry-btn";
             retryBtn.innerHTML = "Retry";
@@ -450,46 +412,39 @@
             };
             bubble.appendChild(retryBtn);
 
-            // Update timestamp
-            const timestamp = bubble.querySelector('.timestamp');
+            const timestamp = bubble.querySelector(".timestamp");
             if (timestamp) {
               timestamp.textContent = getTimestamp();
             }
 
-            messageDiv.classList.add('error');
+            messageDiv.classList.add("error");
           }
           console.error("Failed to send message");
         } else {
-          // Update the existing message to sent status
           if (messageDiv) {
-            const bubble = messageDiv.querySelector('.message-bubble');
+            const bubble = messageDiv.querySelector(".message-bubble");
 
-            // Remove any existing status span
-            const oldStatus = bubble.querySelector('.message-status');
+            const oldStatus = bubble.querySelector(".message-status");
             if (oldStatus) oldStatus.remove();
 
-            // Remove any existing retry button
-            const oldRetry = bubble.querySelector('.retry-btn');
+            const oldRetry = bubble.querySelector(".retry-btn");
             if (oldRetry) oldRetry.remove();
 
-            // Add sent status
             const statusSpan = document.createElement("span");
             statusSpan.className = "message-status status-sent";
-            statusSpan.innerHTML = '✓✓';
-            statusSpan.title = 'Sent';
+            statusSpan.innerHTML = "✓✓";
+            statusSpan.title = "Sent";
             bubble.appendChild(statusSpan);
 
-            messageDiv.classList.remove('error');
+            messageDiv.classList.remove("error");
           }
-          // Show typing dots only after message is sent successfully
           showTypingDots();
         }
       } catch (err) {
         console.error("Network Error:", err);
-        // Update the existing message to failed status
         if (messageDiv) {
-          const bubble = messageDiv.querySelector('.message-bubble');
-          bubble.innerHTML = '';
+          const bubble = messageDiv.querySelector(".message-bubble");
+          bubble.innerHTML = "";
 
           const textSpan = document.createElement("span");
           textSpan.className = "message-text";
@@ -498,8 +453,8 @@
 
           const statusSpan = document.createElement("span");
           statusSpan.className = "message-status status-failed";
-          statusSpan.innerHTML = '⚠️';
-          statusSpan.title = 'Failed to send';
+          statusSpan.innerHTML = "⚠️";
+          statusSpan.title = "Failed to send";
           bubble.appendChild(statusSpan);
 
           const retryBtn = document.createElement("button");
@@ -513,12 +468,12 @@
           };
           bubble.appendChild(retryBtn);
 
-          const timestamp = bubble.querySelector('.timestamp');
+          const timestamp = bubble.querySelector(".timestamp");
           if (timestamp) {
             timestamp.textContent = getTimestamp();
           }
 
-          messageDiv.classList.add('error');
+          messageDiv.classList.add("error");
         }
         hideTypingDots();
       }
@@ -542,14 +497,13 @@
       input.placeholder = isCallActive ? "Type your reply..." : "Start a call first...";
     }
 
-    // Initialize
     window.addEventListener("load", () => {
       loadDefaultNumbers();
       updateCallButtons();
     });
 
-    // Clean up
     window.addEventListener("beforeunload", () => {
+      stopActivePlayback();
       if (isCallActive) {
         endCall();
       }
